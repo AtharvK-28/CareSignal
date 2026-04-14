@@ -1387,12 +1387,12 @@ export default function App() {
                         setIsVoiceTriage(false);
                         startTriage();
                       }}
-                      className="h-auto py-5 px-5 flex-col items-start text-left gap-3 border-2 border-slate-100 hover:border-blue-600 hover:bg-blue-50/50 transition-all shadow-sm hover:shadow-md rounded-2xl group"
+                      className="h-auto py-5 px-5 flex-col items-start justify-start text-left gap-3 border-2 border-slate-100 hover:border-blue-600 hover:bg-blue-50/50 transition-all shadow-sm hover:shadow-md rounded-2xl group whitespace-normal"
                     >
                       <div className="flex items-center gap-2 text-blue-600 font-bold text-xs uppercase tracking-wider group-hover:scale-105 transition-transform">
                         {scenario.icon} {scenario.title}
                       </div>
-                      <p className="text-xs text-slate-600 leading-relaxed italic">"{scenario.text}"</p>
+                      <p className="text-xs text-slate-600 leading-relaxed italic break-words">"{scenario.text}"</p>
                     </Button>
                   ))}
                 </div>
