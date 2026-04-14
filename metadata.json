@@ -1,0 +1,10 @@
+{
+  "name": "CareSignal",
+  "description": "A multimodal healthcare triage tool with AI vision, interactive body mapping, and instant multilingual support for action-oriented medical guidance.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation",
+    "camera"
+  ],
+  "majorCapabilities": []
+}

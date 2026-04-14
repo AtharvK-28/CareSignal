@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // User Profile & Consent
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+      
+      match /consents/{consentId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /settings/{settingId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /profile/{profileId} {
+        allow read, write: if isOwner(uid);
+      }
+      
+      match /reports/{reportId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // Research Data (Write-only for consented users, Admin read)
+    match /research_data/{reportId} {
+      allow create: if true; // Allow anonymous research contributions if app logic permits
+      allow read: if false; // Only accessible via backend/admin console
+    }
+  }
+}

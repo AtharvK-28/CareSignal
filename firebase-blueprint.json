@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Basic information about the user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "dob": { "type": "string", "format": "date" },
+        "location": { "type": "string" },
+        "bloodGroup": { "type": "string" },
+        "emergencyContacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "relationship": { "type": "string" },
+              "phone": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "UserConsent": {
+      "title": "User Consent",
+      "description": "Records user's data sharing preferences.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User ID" },
+        "allowPersonalization": { "type": "boolean", "description": "Save data for personal insights" },
+        "allowResearch": { "type": "boolean", "description": "Anonymized data for research" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "allowPersonalization", "allowResearch", "updatedAt"]
+    },
+    "TriageReport": {
+      "title": "Triage Report",
+      "description": "Stored triage data for users who consented to personalization.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User ID" },
+        "urgency": { "type": "string", "enum": ["Low", "Medium", "High"] },
+        "primaryComplaint": { "type": "string" },
+        "severity": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "algorithmicMatches": { "type": "array" },
+        "priorityScore": { "type": "number" },
+        "isCheckIn": { "type": "boolean" },
+        "parentReportId": { "type": "string" },
+        "trend": { "type": "string", "enum": ["Improving", "Stable", "Worsening"] }
+      },
+      "required": ["uid", "urgency", "primaryComplaint", "createdAt"]
+    },
+    "CheckInSettings": {
+      "title": "Check-In Settings",
+      "description": "User preferences for proactive follow-ups.",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "frequency": { "type": "string", "enum": ["Standard", "Frequent", "Minimal"] },
+        "lastCheckInAt": { "type": "string", "format": "date-time" },
+        "nextScheduledAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}/consents/current": {
+      "schema": "UserConsent",
+      "description": "User's current consent settings"
+    },
+    "/users/{uid}/profile": {
+      "schema": "UserProfile",
+      "description": "User's personal profile and emergency contacts"
+    },
+    "/users/{uid}/settings/checkins": {
+      "schema": "CheckInSettings",
+      "description": "User's check-in preferences"
+    },
+    "/users/{uid}/reports/{reportId}": {
+      "schema": "TriageReport",
+      "description": "User's historical triage reports and check-ins"
+    },
+    "/research_data/{reportId}": {
+      "schema": "TriageReport",
+      "description": "Anonymized triage data for research"
+    }
+  }
+}
