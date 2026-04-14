@@ -3,6 +3,106 @@ import { UserProfile } from "../lib/firebase";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isRetryableApiError = (error: any) => {
+  const status = error?.status || error?.error?.status;
+  const code = error?.code || error?.error?.code;
+  const message = error?.message || error?.error?.message || "";
+  return (
+    status === "UNAVAILABLE" ||
+    status === "RESOURCE_EXHAUSTED" ||
+    code === 503 ||
+    code === 429 ||
+    message.includes("high demand") ||
+    message.includes("Quota exceeded")
+  );
+};
+
+const getRetryDelayMs = (attempt: number) => {
+  const base = Math.min(8000, 500 * 2 ** attempt);
+  const jitter = Math.floor(Math.random() * 200);
+  return base + jitter;
+};
+
+const generateContentWithRetry = async (params: any, retries = 3) => {
+  let lastError: any;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableApiError(error) || attempt === retries) {
+        throw error;
+      }
+      await sleep(getRetryDelayMs(attempt));
+    }
+  }
+  throw lastError;
+};
+
+const formatReportDate = (report: any) => {
+  const createdAt = report?.createdAt;
+  if (!createdAt) return new Date().toISOString().slice(0, 10);
+  if (typeof createdAt === "string") return createdAt.slice(0, 10);
+  if (createdAt?.seconds) return new Date(createdAt.seconds * 1000).toISOString().slice(0, 10);
+  if (typeof createdAt?.toDate === "function") {
+    return createdAt.toDate().toISOString().slice(0, 10);
+  }
+  return new Date().toISOString().slice(0, 10);
+};
+
+const buildFallbackClinicalReport = (reports: any[], profile?: UserProfile | null): ClinicalReport => {
+  const timeline =
+    reports && reports.length > 0
+      ? reports.slice(0, 10).map((r: any) => {
+          const urgency = r?.urgency || "Medium";
+          const severity =
+            typeof r?.severity === "number"
+              ? r.severity
+              : urgency === "High"
+              ? 8
+              : urgency === "Low"
+              ? 3
+              : 5;
+          return {
+            date: formatReportDate(r),
+            symptoms: r?.primaryComplaint || "Reported symptoms",
+            severity,
+            trend: "Stable",
+          };
+        })
+      : [
+          {
+            date: new Date().toISOString().slice(0, 10),
+            symptoms: "No prior reports available",
+            severity: 0,
+            trend: "Stable",
+          },
+        ];
+
+  const ageNote = profile?.dob ? `DOB: ${profile.dob}` : "DOB not provided";
+
+  return {
+    summary:
+      "Clinical report generated without AI analysis due to temporary service limits. Please review patient history manually.",
+    symptomTimeline: timeline,
+    keyRiskIndicators: [
+      "Automated AI analysis unavailable",
+      ageNote,
+    ],
+    clinicalSignals: [
+      {
+        title: "AI Unavailable",
+        description: "The AI service was temporarily unavailable or rate-limited.",
+        level: "Stable",
+      },
+    ],
+    recommendationForDoctor:
+      "Review the symptom timeline and patient profile, and consider follow-up questions to clarify symptoms, duration, and severity.",
+  };
+};
+
 export interface TriageResult {
   urgency: "Low" | "Medium" | "High";
   whatMightHave: string;
@@ -86,71 +186,71 @@ export interface ClinicalReport {
 
 export const geminiService = {
   async generateClinicalSummary(reports: any[], profile?: UserProfile | null): Promise<ClinicalReport> {
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: `Generate a concise, structured, and clinically useful report for a healthcare professional based on the following patient data.
-      
-      Patient Profile: ${JSON.stringify(profile || "Not provided")}
-      Historical Reports (last 10): ${JSON.stringify(reports)}
-
-      Requirements:
-      1. Summary: A brief clinical overview of the current status.
-      2. Symptom Timeline: A chronological list of key symptom events, including date, symptoms, severity (1-10), and trend (Improving/Stable/Worsening).
-      3. Key Risk Indicators: List any specific risk factors identified (e.g., age, history, specific symptom combinations).
-      4. Clinical Signals: Identify worsening trends, recurring issues, or critical red flags. Assign a level: "Critical", "Warning", or "Stable".
-      5. Recommendation: A specific note for the doctor on what to focus on or investigate.
-
-      Return the result as a JSON object matching the ClinicalReport interface.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            symptomTimeline: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  date: { type: Type.STRING },
-                  symptoms: { type: Type.STRING },
-                  severity: { type: Type.NUMBER },
-                  trend: { type: Type.STRING }
-                },
-                required: ["date", "symptoms", "severity", "trend"]
-              }
-            },
-            keyRiskIndicators: { type: Type.ARRAY, items: { type: Type.STRING } },
-            clinicalSignals: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  title: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  level: { type: Type.STRING, enum: ["Critical", "Warning", "Stable"] }
-                },
-                required: ["title", "description", "level"]
-              }
-            },
-            recommendationForDoctor: { type: Type.STRING }
-          },
-          required: ["summary", "symptomTimeline", "keyRiskIndicators", "clinicalSignals", "recommendationForDoctor"]
-        }
-      }
-    });
-
     try {
+      const response = await generateContentWithRetry({
+        model: "gemini-2.5-flash",
+        contents: `Generate a concise, structured, and clinically useful report for a healthcare professional based on the following patient data.
+        
+        Patient Profile: ${JSON.stringify(profile || "Not provided")}
+        Historical Reports (last 10): ${JSON.stringify(reports)}
+
+        Requirements:
+        1. Summary: A brief clinical overview of the current status.
+        2. Symptom Timeline: A chronological list of key symptom events, including date, symptoms, severity (1-10), and trend (Improving/Stable/Worsening).
+        3. Key Risk Indicators: List any specific risk factors identified (e.g., age, history, specific symptom combinations).
+        4. Clinical Signals: Identify worsening trends, recurring issues, or critical red flags. Assign a level: "Critical", "Warning", or "Stable".
+        5. Recommendation: A specific note for the doctor on what to focus on or investigate.
+
+        Return the result as a JSON object matching the ClinicalReport interface.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: { type: Type.STRING },
+              symptomTimeline: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING },
+                    symptoms: { type: Type.STRING },
+                    severity: { type: Type.NUMBER },
+                    trend: { type: Type.STRING }
+                  },
+                  required: ["date", "symptoms", "severity", "trend"]
+                }
+              },
+              keyRiskIndicators: { type: Type.ARRAY, items: { type: Type.STRING } },
+              clinicalSignals: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    level: { type: Type.STRING, enum: ["Critical", "Warning", "Stable"] }
+                  },
+                  required: ["title", "description", "level"]
+                }
+              },
+              recommendationForDoctor: { type: Type.STRING }
+            },
+            required: ["summary", "symptomTimeline", "keyRiskIndicators", "clinicalSignals", "recommendationForDoctor"]
+          }
+        }
+      });
+
       return JSON.parse(response.text || "{}");
     } catch (e) {
-      console.error("Failed to parse clinical summary", e);
-      throw e;
+      console.error("Failed to generate clinical summary, using fallback", e);
+      return buildFallbackClinicalReport(reports, profile);
     }
   },
 
   async getFollowUpQuestions(primaryComplaint: string): Promise<FollowUpQuestion[]> {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await generateContentWithRetry({
+      model: "gemini-2.5-flash",
       contents: `The user's primary complaint is: "${primaryComplaint}". 
       Generate 5-7 targeted yes/no follow-up questions to thoroughly check for life-threatening combinations, red flags, or to narrow down the condition.
       Focus on associated symptoms, onset characteristics, and risk factors.
@@ -241,8 +341,8 @@ export const geminiService = {
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
+    const response = await generateContentWithRetry({
+      model: "gemini-2.5-flash",
       contents: contents,
       config: {
         responseMimeType: "application/json",
@@ -376,7 +476,7 @@ export const geminiService = {
 
   async generateSpeech(text: string): Promise<string | null> {
     try {
-      const response = await ai.models.generateContent({
+      const response = await generateContentWithRetry({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `[SPEED: FAST] [TONE: NATURAL] ${text}` }] }],
         config: {
@@ -466,7 +566,7 @@ export const geminiService = {
   async searchAllNearbyResources(location?: { lat: number, lng: number } | string): Promise<{ doctors: any[], labs: any[] }> {
     const locationContext = typeof location === 'string' ? `near PIN code ${location}` : location ? `near coordinates ${location.lat}, ${location.lng}` : 'nearby';
     
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry({
       model: "gemini-3-flash-preview",
       contents: `Find 5 Doctors/Specialists and 5 Diagnostic Labs ${locationContext}. Provide results in a JSON object with two arrays: "doctors" and "labs". Each object should have "name", "address", "phone", "rating", and "distance".`,
       config: {
@@ -521,7 +621,7 @@ export const geminiService = {
     const locationContext = typeof location === 'string' ? `near PIN code ${location}` : location ? `near coordinates ${location.lat}, ${location.lng}` : 'nearby';
     const fullQuery = `${query} ${locationContext} with phone numbers and addresses`;
     
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry({
       model: "gemini-3-flash-preview",
       contents: `Find 5 ${fullQuery}. Provide results in a JSON array of objects with "name", "address", "phone", "rating", and "distance" (if available).`,
       config: {
@@ -558,7 +658,7 @@ export const geminiService = {
     currentSeverity: number;
     daysSinceLastReport: number;
   }): Promise<CheckInAnalysis> {
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry({
       model: "gemini-3-flash-preview",
       contents: `Analyze a medical check-in.
       Previous Report: ${JSON.stringify(data.previousReport)}

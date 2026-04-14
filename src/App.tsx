@@ -807,6 +807,7 @@ export default function App() {
   const [nearbyDoctors, setNearbyDoctors] = useState<any[]>([]);
   const [nearbyLabs, setNearbyLabs] = useState<any[]>([]);
   const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [isVoiceTriage, setIsVoiceTriage] = useState(false);
   const [algorithmicMatches, setAlgorithmicMatches] = useState<{ condition: any; score: number }[]>([]);
   const [priorityScore, setPriorityScore] = useState(0);
@@ -930,13 +931,16 @@ export default function App() {
   };
 
   const handleLocationSearch = async (location?: { lat: number, lng: number } | string) => {
+    if (isLocating) return;
     setIsLocating(true);
+    setLocationError(null);
     try {
       const { doctors, labs } = await geminiService.searchAllNearbyResources(location);
       setNearbyDoctors(doctors);
       setNearbyLabs(labs);
     } catch (error) {
       console.error("Location search failed", error);
+      setLocationError("Nearby search is temporarily unavailable. Please try again in a moment.");
     } finally {
       setIsLocating(false);
     }
@@ -2145,7 +2149,7 @@ export default function App() {
                               value={pincode}
                               onChange={(e) => setPincode(e.target.value)}
                             />
-                            <Button size="sm" variant="ghost" className="h-8 px-2 text-blue-400 hover:text-blue-300" onClick={() => handleLocationSearch(pincode)}>
+                            <Button size="sm" variant="ghost" className="h-8 px-2 text-blue-400 hover:text-blue-300" onClick={() => handleLocationSearch(pincode)} disabled={isLocating}>
                               <Search className="h-4 w-4" />
                             </Button>
                           </div>
@@ -2192,7 +2196,9 @@ export default function App() {
                             )) : (
                               <div className="py-12 text-center border-2 border-dashed rounded-xl border-slate-100 bg-slate-50/30">
                                 <Stethoscope className="h-8 w-8 text-slate-200 mx-auto mb-2" />
-                                <p className="text-xs text-slate-400">Search to find nearby specialists</p>
+                                <p className="text-xs text-slate-400">
+                                  {locationError ? locationError : "Search to find nearby specialists"}
+                                </p>
                               </div>
                             )}
                           </div>
@@ -2231,7 +2237,9 @@ export default function App() {
                             )) : (
                               <div className="py-12 text-center border-2 border-dashed rounded-xl border-slate-100 bg-slate-50/30">
                                 <ClipboardCheck className="h-8 w-8 text-slate-200 mx-auto mb-2" />
-                                <p className="text-xs text-slate-400">Search to find nearby labs</p>
+                                <p className="text-xs text-slate-400">
+                                  {locationError ? locationError : "Search to find nearby labs"}
+                                </p>
                               </div>
                             )}
                           </div>
